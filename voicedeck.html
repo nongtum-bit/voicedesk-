@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VoiceDeck — TTS & SFX Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: #14161b;
+    --panel: #1c1f26;
+    --panel-2: #232732;
+    --line: #2c303a;
+    --tape: #e8863b;
+    --tape-dim: #7a4a26;
+    --text: #edeef0;
+    --muted: #8b909a;
+    --ok: #4cae7d;
+    --err: #e35d5d;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:'Inter',sans-serif; -webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3{font-family:'Space Grotesk',sans-serif; margin:0;}
+  .mono{font-family:'IBM Plex Mono',monospace;}
+
+  header{
+    padding:22px 20px 16px; border-bottom:1px solid var(--line);
+    display:flex; align-items:center; justify-content:space-between; gap:12px;
+  }
+  header .brand{display:flex; align-items:center; gap:10px;}
+  .reel{
+    width:30px; height:30px; border-radius:50%;
+    border:3px solid var(--tape); border-right-color: var(--tape-dim);
+    animation: spin 3s linear infinite; animation-play-state: paused;
+  }
+  .reel.spinning{animation-play-state: running;}
+  @keyframes spin{ to { transform: rotate(360deg); } }
+  header h1{font-size:20px; letter-spacing:.3px;}
+  header .sub{font-size:11px; color:var(--muted); font-family:'IBM Plex Mono',monospace;}
+  .settings-btn{
+    background:none; border:1px solid var(--line); color:var(--text);
+    padding:8px 14px; border-radius:8px; cursor:pointer; font-size:13px;
+  }
+  .settings-btn:hover{border-color:var(--tape);}
+
+  main{max-width:1000px; margin:0 auto; padding:20px; display:grid; gap:18px;}
+  @media(min-width:820px){ main{grid-template-columns:1fr 1fr;} .timeline-wrap{grid-column:1/-1;} }
+
+  .panel{
+    background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:18px;
+  }
+  .panel-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;}
+  .tag{
+    font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:1px;
+    color:var(--tape); text-transform:uppercase;
+  }
+  label{display:block; font-size:12px; color:var(--muted); margin:12px 0 6px;}
+  select, textarea, input[type=text], input[type=number]{
+    width:100%; background:var(--panel-2); border:1px solid var(--line); color:var(--text);
+    border-radius:8px; padding:10px 12px; font-size:14px; font-family:inherit;
+  }
+  textarea{resize:vertical; min-height:90px;}
+  .row{display:flex; gap:10px;}
+  .row > *{flex:1;}
+  button.primary{
+    margin-top:14px; width:100%; background:var(--tape); color:#1a1004; border:none;
+    padding:12px; border-radius:8px; font-weight:600; font-size:14px; cursor:pointer;
+    transition:filter .15s;
+  }
+  button.primary:hover{filter:brightness(1.08);}
+  button.primary:disabled{background:var(--line); color:var(--muted); cursor:not-allowed;}
+  .status{font-size:12px; margin-top:8px; font-family:'IBM Plex Mono',monospace; min-height:16px;}
+  .status.ok{color:var(--ok);} .status.err{color:var(--err);} .status.busy{color:var(--tape);}
+  audio{width:100%; margin-top:10px;}
+  .bars{display:flex; gap:3px; align-items:flex-end; height:24px; margin-top:8px;}
+  .bars span{
+    width:4px; background:var(--tape-dim); border-radius:2px; height:20%;
+    animation:none;
+  }
+  .bars.live span{animation:bounce 0.9s ease-in-out infinite;}
+  .bars span:nth-child(2){animation-delay:.1s;}
+  .bars span:nth-child(3){animation-delay:.2s;}
+  .bars span:nth-child(4){animation-delay:.3s;}
+  .bars span:nth-child(5){animation-delay:.15s;}
+  .bars span:nth-child(6){animation-delay:.25s;}
+  @keyframes bounce{ 0%,100%{height:20%;} 50%{height:100%; background:var(--tape);} }
+
+  .timeline-wrap .panel-head{margin-bottom:16px;}
+  .track{margin-bottom:14px;}
+  .track-label{display:flex; justify-content:space-between; font-size:12px; color:var(--muted); margin-bottom:6px;}
+  .track-bar{
+    position:relative; height:34px; background:var(--panel-2); border:1px solid var(--line);
+    border-radius:6px; overflow:hidden;
+  }
+  .track-fill{
+    position:absolute; top:0; bottom:0; background:linear-gradient(90deg, var(--tape-dim), var(--tape));
+    border-radius:6px; opacity:.85;
+  }
+  .ruler{display:flex; font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--muted); justify-content:space-between; margin-top:4px;}
+
+  .modal-backdrop{
+    position:fixed; inset:0; background:rgba(0,0,0,.6); display:none;
+    align-items:center; justify-content:center; padding:16px; z-index:50;
+  }
+  .modal-backdrop.show{display:flex;}
+  .modal{
+    background:var(--panel); border:1px solid var(--line); border-radius:14px;
+    padding:20px; width:100%; max-width:440px; max-height:85vh; overflow-y:auto;
+  }
+  .modal h3{margin-bottom:4px;}
+  .modal p.hint{font-size:12px; color:var(--muted); margin:4px 0 16px;}
+  .modal .close{float:right; background:none; border:none; color:var(--muted); font-size:18px; cursor:pointer;}
+  footer{text-align:center; color:var(--muted); font-size:11px; padding:24px; font-family:'IBM Plex Mono',monospace;}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="reel" id="reel"></div>
+    <div>
+      <h1>VoiceDeck</h1>
+      <div class="sub">TTS + SFX STUDIO · client-side prototype</div>
+    </div>
+  </div>
+  <button class="settings-btn" onclick="openSettings()">⚙ ตั้งค่า API</button>
+</header>
+
+<main>
+
+  <!-- SPEECH PANEL -->
+  <section class="panel">
+    <div class="panel-head">
+      <h2>เสียงพูด</h2>
+      <span class="tag" id="speechProviderTag">OPENAI</span>
+    </div>
+
+    <label>ข้อความ</label>
+    <textarea id="speechText" placeholder="พิมพ์ข้อความที่ต้องการให้พากย์...">สวัสดีครับ นี่คือการทดสอบระบบแปลงข้อความเป็นเสียง</textarea>
+
+    <div class="row">
+      <div>
+        <label>ผู้ให้บริการ</label>
+        <select id="speechProvider" onchange="onSpeechProviderChange()">
+          <option value="openai">OpenAI TTS</option>
+          <option value="gemini">Gemini (Google AI Studio)</option>
+          <option value="elevenlabs">ElevenLabs</option>
+        </select>
+      </div>
+      <div>
+        <label>เสียง</label>
+        <select id="speechVoice"></select>
+      </div>
+    </div>
+
+    <button class="primary" id="speechBtn" onclick="generateSpeech()">🎙 สร้างเสียงพูด</button>
+    <div class="bars" id="speechBars"><span></span><span></span><span></span><span></span><span></span><span></span></div>
+    <div class="status" id="speechStatus"></div>
+    <audio id="speechAudio" controls style="display:none;"></audio>
+  </section>
+
+  <!-- SFX PANEL -->
+  <section class="panel">
+    <div class="panel-head">
+      <h2>เสียงเอฟเฟค</h2>
+      <span class="tag">ELEVENLABS</span>
+    </div>
+
+    <label>อธิบายเสียงที่ต้องการ</label>
+    <textarea id="sfxText" placeholder="เช่น เสียงฝนตกในป่า, เสียงประตูไม้เปิดเอี๊ยด">เสียงฝนตกปรอยๆ พร้อมลมพัดเบาๆ</textarea>
+
+    <div class="row">
+      <div>
+        <label>ความยาว (วินาที)</label>
+        <input type="number" id="sfxDuration" value="5" min="1" max="22" step="1">
+      </div>
+      <div>
+        <label>ความแม่นยำของ prompt</label>
+        <select id="sfxInfluence">
+          <option value="0.3">ปล่อยให้ AI สร้างสรรค์</option>
+          <option value="0.7" selected>ตามคำอธิบายเป๊ะๆ</option>
+        </select>
+      </div>
+    </div>
+
+    <button class="primary" id="sfxBtn" onclick="generateSfx()">🌊 สร้างเอฟเฟค</button>
+    <div class="bars" id="sfxBars"><span></span><span></span><span></span><span></span><span></span><span></span></div>
+    <div class="status" id="sfxStatus"></div>
+    <audio id="sfxAudio" controls style="display:none;"></audio>
+  </section>
+
+  <!-- TIMELINE / MIXER -->
+  <section class="panel timeline-wrap">
+    <div class="panel-head">
+      <h2>มิกซ์เสียง</h2>
+      <span class="tag">TIMELINE</span>
+    </div>
+
+    <div class="track">
+      <div class="track-label"><span>เสียงพูด</span><span id="speechDurLabel">— ยังไม่สร้างเสียง —</span></div>
+      <div class="track-bar"><div class="track-fill" id="speechFill" style="width:0%; left:0%;"></div></div>
+    </div>
+
+    <div class="track">
+      <div class="track-label"><span>เอฟเฟค (เริ่มที่วินาทีที่เท่าไหร่)</span><span id="sfxDurLabel">— ยังไม่สร้างเสียง —</span></div>
+      <div class="track-bar"><div class="track-fill" id="sfxFill" style="width:0%; left:0%;"></div></div>
+      <input type="range" id="sfxOffset" min="0" max="30" step="0.1" value="0" oninput="updateTimeline()" style="width:100%; margin-top:8px;">
+      <div class="ruler"><span>0s</span><span id="offsetLabel">offset: 0.0s</span><span id="rulerMax">30s</span></div>
+    </div>
+
+    <button class="primary" onclick="renderMix()">⬇ ผสมเสียง & ดาวน์โหลด</button>
+    <div class="status" id="mixStatus"></div>
+    <audio id="mixAudio" controls style="display:none; margin-top:10px;"></audio>
+  </section>
+
+</main>
+
+<footer>API key ของคุณถูกเก็บไว้ใน localStorage ของเบราว์เซอร์นี้เท่านั้น — ไม่ถูกส่งไปที่เซิร์ฟเวอร์ใดๆ นอกจาก provider ที่คุณเลือก</footer>
+
+<!-- SETTINGS MODAL -->
+<div class="modal-backdrop" id="settingsModal">
+  <div class="modal">
+    <button class="close" onclick="closeSettings()">✕</button>
+    <h3>ตั้งค่า API Key</h3>
+    <p class="hint">กรอกเฉพาะ provider ที่คุณจะใช้ ไม่บังคับใส่ทั้งสอง</p>
+
+    <label>OpenAI API Key</label>
+    <input type="text" id="key_openai" placeholder="sk-...">
+
+    <div class="row" style="margin-top:0;">
+      <button class="settings-btn" style="margin-top:12px; flex:1;" onclick="testConnection('openai')">🔌 ทดสอบ OpenAI</button>
+    </div>
+    <div class="status" id="test_openai"></div>
+
+    <label>Gemini API Key (Google AI Studio)</label>
+    <input type="text" id="key_gemini" placeholder="AQ. หรือ AIza...">
+    <div class="row" style="margin-top:0;">
+      <button class="settings-btn" style="margin-top:12px; flex:1;" onclick="testConnection('gemini')">🔌 ทดสอบ Gemini</button>
+    </div>
+    <div class="status" id="test_gemini"></div>
+
+    <label>ElevenLabs API Key</label>
+    <input type="text" id="key_elevenlabs" placeholder="xi-api-key...">
+    <div class="row" style="margin-top:0;">
+      <button class="settings-btn" style="margin-top:12px; flex:1;" onclick="testConnection('elevenlabs')">🔌 ทดสอบ ElevenLabs</button>
+    </div>
+    <div class="status" id="test_elevenlabs"></div>
+
+    <button class="primary" onclick="saveKeys()">บันทึก</button>
+    <div class="status" id="settingsStatus"></div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let speechBlob = null, sfxBlob = null, speechDuration = 0, sfxDuration = 0;
+
+// ---------- storage helpers ----------
+function loadKeys(){
+  $('key_openai').value = localStorage.getItem('vd_key_openai') || '';
+  $('key_gemini').value = localStorage.getItem('vd_key_gemini') || '';
+  $('key_elevenlabs').value = localStorage.getItem('vd_key_elevenlabs') || '';
+}
+function saveKeys(){
+  localStorage.setItem('vd_key_openai', $('key_openai').value.trim());
+  localStorage.setItem('vd_key_gemini', $('key_gemini').value.trim());
+  localStorage.setItem('vd_key_elevenlabs', $('key_elevenlabs').value.trim());
+  $('settingsStatus').textContent = '✓ บันทึกแล้ว';
+  $('settingsStatus').className = 'status ok';
+  setTimeout(()=>{ closeSettings(); refreshVoices(); }, 500);
+}
+function getKey(provider){
+  return localStorage.getItem('vd_key_'+provider) || '';
+}
+function openSettings(){ $('settingsModal').classList.add('show'); }
+function closeSettings(){ $('settingsModal').classList.remove('show'); }
+
+// ---------- connection test ----------
+async function testConnection(provider){
+  const el = $('test_'+provider);
+  const key = $('key_'+provider).value.trim();
+  if(!key){ el.textContent='กรอก key ก่อนครับ'; el.className='status err'; return; }
+  el.textContent='กำลังทดสอบ...'; el.className='status busy';
+
+  try{
+    if(provider === 'openai'){
+      const res = await fetch('https://api.openai.com/v1/models', {
+        headers:{ 'Authorization':'Bearer '+key }
+      });
+      if(res.ok){ el.textContent='✓ เชื่อมต่อสำเร็จ key ใช้งานได้'; el.className='status ok'; }
+      else{
+        const info = await interpretError('openai', res);
+        el.textContent='✗ '+info; el.className='status err';
+      }
+    } else if(provider === 'gemini'){
+      const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models', {
+        headers:{ 'x-goog-api-key': key }
+      });
+      if(res.ok){ el.textContent='✓ เชื่อมต่อสำเร็จ key ใช้งานได้'; el.className='status ok'; }
+      else{
+        const info = await interpretError('gemini', res);
+        el.textContent='✗ '+info; el.className='status err';
+      }
+    } else {
+      const res = await fetch('https://api.elevenlabs.io/v1/user', {
+        headers:{ 'xi-api-key': key }
+      });
+      if(res.ok){
+        const data = await res.json();
+        const used = data.subscription?.character_count ?? '?';
+        const limit = data.subscription?.character_limit ?? '?';
+        el.textContent = `✓ เชื่อมต่อสำเร็จ — ใช้ไป ${used}/${limit} ตัวอักษร`;
+        el.className='status ok';
+      } else {
+        const info = await interpretError('elevenlabs', res);
+        el.textContent='✗ '+info; el.className='status err';
+      }
+    }
+  }catch(e){
+    el.textContent='✗ เชื่อมต่อไม่สำเร็จ (เช็คอินเทอร์เน็ต หรืออาจติด CORS)'; el.className='status err';
+  }
+}
+
+// interpret error responses from OpenAI / ElevenLabs into a friendly Thai message
+async function interpretError(provider, res){
+  let bodyText = '';
+  try{ bodyText = await res.text(); }catch(e){}
+  let body = {};
+  try{ body = JSON.parse(bodyText); }catch(e){}
+
+  if(provider === 'openai'){
+    const type = body?.error?.code || body?.error?.type || '';
+    if(res.status === 401 || type === 'invalid_api_key') return 'API key ไม่ถูกต้อง — ตรวจสอบว่าคัดลอกมาครบหรือยังไม่ถูก revoke';
+    if(type === 'insufficient_quota') return 'เครดิต OpenAI หมด — เติมเงินที่หน้า platform.openai.com/settings/organization/billing';
+    if(res.status === 429 || type === 'rate_limit_exceeded') return 'เรียก API ถี่เกินไป (rate limit) — รอสักครู่แล้วลองใหม่';
+    return `เกิดข้อผิดพลาด (status ${res.status}) — ${body?.error?.message || bodyText.slice(0,120)}`;
+  } else if(provider === 'gemini'){
+    const status = body?.error?.status || '';
+    if(res.status === 400 && status === 'INVALID_ARGUMENT' && /API key/i.test(body?.error?.message||'')) return 'API key ไม่ถูกต้อง';
+    if(res.status === 401 || status === 'UNAUTHENTICATED') return 'API key ไม่ถูกต้องหรือไม่มีสิทธิ์เข้าถึง';
+    if(res.status === 403 || status === 'PERMISSION_DENIED') return 'ไม่มีสิทธิ์เข้าถึงโมเดลนี้ — ตรวจสอบว่าเปิดใช้ Gemini API ในโปรเจกต์แล้ว';
+    if(res.status === 429 || status === 'RESOURCE_EXHAUSTED') return 'ใช้เกิน rate limit ของ Gemini free tier — รอสักครู่แล้วลองใหม่';
+    return `เกิดข้อผิดพลาด (status ${res.status}) — ${body?.error?.message || bodyText.slice(0,120)}`;
+  } else {
+    const status = body?.detail?.status || '';
+    if(res.status === 401 || status === 'invalid_api_key') return 'API key ไม่ถูกต้อง';
+    if(status === 'quota_exceeded') return 'โควต้าอักขระของ ElevenLabs หมด — ตรวจสอบ plan ของคุณ';
+    if(res.status === 429) return 'เรียก API ถี่เกินไป (rate limit) — รอสักครู่แล้วลองใหม่';
+    return `เกิดข้อผิดพลาด (status ${res.status}) — ${body?.detail?.message || bodyText.slice(0,120)}`;
+  }
+}
+
+// ---------- voices ----------
+const OPENAI_VOICES = ['alloy','echo','fable','onyx','nova','shimmer'];
+const GEMINI_VOICES = ['Zephyr','Puck','Charon','Kore','Fenrir','Leda','Orus','Aoede','Callirrhoe','Autonoe','Enceladus','Iapetus','Umbriel','Algieba','Despina','Erinome'];
+async function refreshVoices(){
+  const provider = $('speechProvider').value;
+  $('speechProviderTag').textContent = provider.toUpperCase();
+  const sel = $('speechVoice');
+  sel.innerHTML = '';
+  if(provider === 'openai'){
+    OPENAI_VOICES.forEach(v=>{
+      const o=document.createElement('option'); o.value=v; o.textContent=v; sel.appendChild(o);
+    });
+    return;
+  }
+  if(provider === 'gemini'){
+    GEMINI_VOICES.forEach(v=>{
+      const o=document.createElement('option'); o.value=v; o.textContent=v; sel.appendChild(o);
+    });
+    return;
+  }
+  // elevenlabs: fetch voice list
+  const key = getKey('elevenlabs');
+  if(!key){ sel.innerHTML='<option value="">-- ใส่ API key ก่อน --</option>'; return; }
+  try{
+    const res = await fetch('https://api.elevenlabs.io/v1/voices', { headers:{'xi-api-key':key} });
+    const data = await res.json();
+    (data.voices||[]).forEach(v=>{
+      const o=document.createElement('option'); o.value=v.voice_id; o.textContent=v.name; sel.appendChild(o);
+    });
+    if(!data.voices || !data.voices.length) sel.innerHTML='<option value="">ไม่พบเสียง — ตรวจสอบ key</option>';
+  }catch(e){
+    sel.innerHTML='<option value="">โหลดเสียงไม่สำเร็จ</option>';
+  }
+}
+function onSpeechProviderChange(){ refreshVoices(); }
+
+// ---------- speech generation ----------
+async function generateSpeech(){
+  const provider = $('speechProvider').value;
+  const text = $('speechText').value.trim();
+  const voice = $('speechVoice').value;
+  const statusEl = $('speechStatus');
+  if(!text){ statusEl.textContent='กรอกข้อความก่อนครับ'; statusEl.className='status err'; return; }
+  const key = getKey(provider);
+  if(!key){ statusEl.textContent='ยังไม่ได้ตั้งค่า API key สำหรับ '+provider; statusEl.className='status err'; return; }
+
+  setBusy('speech', true);
+  statusEl.textContent='กำลังสร้างเสียง...'; statusEl.className='status busy';
+
+  try{
+    let audioBuf;
+    if(provider === 'openai'){
+      const res = await fetch('https://api.openai.com/v1/audio/speech', {
+        method:'POST',
+        headers:{ 'Authorization':'Bearer '+key, 'Content-Type':'application/json' },
+        body: JSON.stringify({ model:'tts-1', voice: voice||'alloy', input: text })
+      });
+      if(!res.ok){ const msg = await interpretError('openai', res); throw new Error(msg); }
+      audioBuf = await res.arrayBuffer();
+    } else if(provider === 'gemini'){
+      const model = 'gemini-2.5-flash-preview-tts';
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+        method:'POST',
+        headers:{ 'x-goog-api-key': key, 'Content-Type':'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text }] }],
+          generationConfig: {
+            responseModalities: ['AUDIO'],
+            speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice || 'Kore' } } }
+          }
+        })
+      });
+      if(!res.ok){ const msg = await interpretError('gemini', res); throw new Error(msg); }
+      const data = await res.json();
+      const part = data?.candidates?.[0]?.content?.parts?.[0];
+      const b64 = part?.inlineData?.data;
+      const mimeType = part?.inlineData?.mimeType || 'audio/L16;rate=24000';
+      if(!b64) throw new Error('Gemini ไม่ส่งเสียงกลับมา — ลองข้อความอื่นหรือเช็ค quota');
+      const rateMatch = /rate=(\d+)/.exec(mimeType);
+      const sampleRate = rateMatch ? parseInt(rateMatch[1]) : 24000;
+      audioBuf = pcmBase64ToWav(b64, sampleRate);
+    } else {
+      const res = await fetch('https://api.elevenlabs.io/v1/text-to-speech/'+voice, {
+        method:'POST',
+        headers:{ 'xi-api-key':key, 'Content-Type':'application/json' },
+        body: JSON.stringify({ text, model_id:'eleven_multilingual_v2' })
+      });
+      if(!res.ok){ const msg = await interpretError('elevenlabs', res); throw new Error(msg); }
+      audioBuf = await res.arrayBuffer();
+    }
+    speechBlob = new Blob([audioBuf], {type: provider === 'gemini' ? 'audio/wav' : 'audio/mpeg'});
+    const url = URL.createObjectURL(speechBlob);
+    $('speechAudio').src = url; $('speechAudio').style.display='block';
+    speechDuration = await getAudioDuration(speechBlob);
+    $('speechDurLabel').textContent = speechDuration.toFixed(1)+'s';
+    statusEl.textContent='✓ สร้างเสียงสำเร็จ'; statusEl.className='status ok';
+    updateTimeline();
+  }catch(e){
+    console.error(e);
+    statusEl.textContent = e.message || 'เกิดข้อผิดพลาด — ดู console เพิ่มเติม (อาจติด CORS ถ้า provider ไม่อนุญาตเรียกจาก browser ตรง)';
+    statusEl.className='status err';
+  }
+  setBusy('speech', false);
+}
+
+// ---------- sfx generation ----------
+async function generateSfx(){
+  const text = $('sfxText').value.trim();
+  const duration = parseFloat($('sfxDuration').value);
+  const influence = parseFloat($('sfxInfluence').value);
+  const statusEl = $('sfxStatus');
+  if(!text){ statusEl.textContent='กรอกคำอธิบายเสียงก่อนครับ'; statusEl.className='status err'; return; }
+  const key = getKey('elevenlabs');
+  if(!key){ statusEl.textContent='ยังไม่ได้ตั้งค่า ElevenLabs API key'; statusEl.className='status err'; return; }
+
+  setBusy('sfx', true);
+  statusEl.textContent='กำลังสร้างเอฟเฟค...'; statusEl.className='status busy';
+
+  try{
+    const res = await fetch('https://api.elevenlabs.io/v1/sound-generation', {
+      method:'POST',
+      headers:{ 'xi-api-key':key, 'Content-Type':'application/json' },
+      body: JSON.stringify({ text, duration_seconds: duration, prompt_influence: influence })
+    });
+    if(!res.ok){ const msg = await interpretError('elevenlabs', res); throw new Error(msg); }
+    const buf = await res.arrayBuffer();
+    sfxBlob = new Blob([buf], {type:'audio/mpeg'});
+    const url = URL.createObjectURL(sfxBlob);
+    $('sfxAudio').src = url; $('sfxAudio').style.display='block';
+    sfxDuration = await getAudioDuration(sfxBlob);
+    $('sfxDurLabel').textContent = sfxDuration.toFixed(1)+'s';
+    statusEl.textContent='✓ สร้างเอฟเฟคสำเร็จ'; statusEl.className='status ok';
+    updateTimeline();
+  }catch(e){
+    console.error(e);
+    statusEl.textContent = e.message || 'เกิดข้อผิดพลาด — ดู console เพิ่มเติม';
+    statusEl.className='status err';
+  }
+  setBusy('sfx', false);
+}
+
+// ---------- helpers ----------
+function setBusy(which, busy){
+  $(which+'Btn').disabled = busy;
+  $(which+'Bars').classList.toggle('live', busy);
+  $('reel').classList.toggle('spinning', busy || document.querySelectorAll('.bars.live').length>0);
+}
+function getAudioDuration(blob){
+  return new Promise(resolve=>{
+    const a = new Audio(); a.src = URL.createObjectURL(blob);
+    a.onloadedmetadata = ()=> resolve(a.duration || 0);
+  });
+}
+
+// Gemini TTS returns raw 16-bit PCM mono audio as base64, with no file header.
+// This wraps it in a minimal WAV header so browsers/decodeAudioData can play it.
+function pcmBase64ToWav(base64, sampleRate){
+  const binary = atob(base64);
+  const len = binary.length;
+  const pcmBytes = new Uint8Array(len);
+  for(let i=0;i<len;i++) pcmBytes[i] = binary.charCodeAt(i);
+
+  const buffer = new ArrayBuffer(44 + len);
+  const view = new DataView(buffer);
+  const writeStr = (offset, str) => { for(let i=0;i<str.length;i++) view.setUint8(offset+i, str.charCodeAt(i)); };
+
+  writeStr(0,'RIFF'); view.setUint32(4, 36+len, true); writeStr(8,'WAVE');
+  writeStr(12,'fmt '); view.setUint32(16,16,true); view.setUint16(20,1,true);
+  view.setUint16(22,1,true); view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate*2, true); view.setUint16(32,2,true); view.setUint16(34,16,true);
+  writeStr(36,'data'); view.setUint32(40, len, true);
+
+  new Uint8Array(buffer, 44).set(pcmBytes);
+  return buffer;
+}
+
+function updateTimeline(){
+  const offset = parseFloat($('sfxOffset').value);
+  $('offsetLabel').textContent = 'offset: '+offset.toFixed(1)+'s';
+  const totalEnd = Math.max(speechDuration, offset + sfxDuration, 5);
+  $('sfxOffset').max = Math.max(30, totalEnd);
+  $('rulerMax').textContent = Math.ceil(totalEnd)+'s';
+
+  const speechFill = $('speechFill');
+  speechFill.style.left='0%';
+  speechFill.style.width = speechDuration ? (speechDuration/totalEnd*100)+'%' : '0%';
+
+  const sfxFill = $('sfxFill');
+  sfxFill.style.left = (offset/totalEnd*100)+'%';
+  sfxFill.style.width = sfxDuration ? (sfxDuration/totalEnd*100)+'%' : '0%';
+}
+
+// ---------- mixing via Web Audio ----------
+async function renderMix(){
+  const statusEl = $('mixStatus');
+  if(!speechBlob && !sfxBlob){ statusEl.textContent='ต้องสร้างเสียงพูดหรือเอฟเฟคอย่างน้อย 1 อย่างก่อน'; statusEl.className='status err'; return; }
+  statusEl.textContent='กำลังผสมเสียง...'; statusEl.className='status busy';
+
+  try{
+    const offset = parseFloat($('sfxOffset').value);
+    const ctx = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(2, 44100 * Math.ceil(Math.max(speechDuration, offset+sfxDuration, 1)+1), 44100);
+
+    async function decode(blob){
+      const arr = await blob.arrayBuffer();
+      return await ctx.decodeAudioData(arr);
+    }
+
+    if(speechBlob){
+      const buf = await decode(speechBlob);
+      const src = ctx.createBufferSource(); src.buffer = buf; src.connect(ctx.destination); src.start(0);
+    }
+    if(sfxBlob){
+      const buf = await decode(sfxBlob);
+      const src = ctx.createBufferSource(); src.buffer = buf; src.connect(ctx.destination); src.start(offset);
+    }
+
+    const rendered = await ctx.startRendering();
+    const wavBlob = audioBufferToWav(rendered);
+    const url = URL.createObjectURL(wavBlob);
+    $('mixAudio').src = url; $('mixAudio').style.display='block';
+
+    const a = document.createElement('a');
+    a.href = url; a.download = 'voicedeck-mix.wav'; a.click();
+
+    statusEl.textContent='✓ ผสมเสียงสำเร็จ กำลังดาวน์โหลด...'; statusEl.className='status ok';
+  }catch(e){
+    console.error(e);
+    statusEl.textContent='ผสมเสียงไม่สำเร็จ ดู console สำหรับรายละเอียด'; statusEl.className='status err';
+  }
+}
+
+// minimal WAV encoder for AudioBuffer -> Blob
+function audioBufferToWav(buffer){
+  const numCh = buffer.numberOfChannels;
+  const len = buffer.length * numCh * 2 + 44;
+  const bufArr = new ArrayBuffer(len);
+  const view = new DataView(bufArr);
+  const writeStr = (offset, str) => { for(let i=0;i<str.length;i++) view.setUint8(offset+i, str.charCodeAt(i)); };
+
+  writeStr(0,'RIFF'); view.setUint32(4, len-8, true); writeStr(8,'WAVE');
+  writeStr(12,'fmt '); view.setUint32(16,16,true); view.setUint16(20,1,true);
+  view.setUint16(22, numCh, true); view.setUint32(24, buffer.sampleRate, true);
+  view.setUint32(28, buffer.sampleRate*numCh*2, true); view.setUint16(32, numCh*2, true); view.setUint16(34,16,true);
+  writeStr(36,'data'); view.setUint32(40, len-44, true);
+
+  let offset = 44;
+  const channels = [];
+  for(let i=0;i<numCh;i++) channels.push(buffer.getChannelData(i));
+  for(let i=0;i<buffer.length;i++){
+    for(let ch=0;ch<numCh;ch++){
+      let sample = Math.max(-1, Math.min(1, channels[ch][i]));
+      sample = sample < 0 ? sample*0x8000 : sample*0x7FFF;
+      view.setInt16(offset, sample, true); offset += 2;
+    }
+  }
+  return new Blob([bufArr], {type:'audio/wav'});
+}
+
+// init
+loadKeys();
+refreshVoices();
+updateTimeline();
+</script>
+</body>
+</html>
