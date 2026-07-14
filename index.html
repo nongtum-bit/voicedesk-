@@ -153,9 +153,17 @@
       </div>
       <div>
         <label>เสียง</label>
-        <select id="speechVoice"></select>
+        <div style="display:flex; gap:6px;">
+          <select id="speechVoice" style="flex:1;"></select>
+          <button class="settings-btn" style="padding:8px 12px;" onclick="previewVoice()" id="previewBtn" title="ฟังตัวอย่างเสียงนี้">▶</button>
+        </div>
       </div>
     </div>
+    <div class="status" id="previewStatus"></div>
+    <audio id="previewAudio" style="display:none;"></audio>
+
+    <label>โทนเสียง / อารมณ์ (ไม่บังคับ — รองรับเฉพาะ OpenAI และ Gemini)</label>
+    <input type="text" id="styleInstruction" placeholder="เช่น เสียงเด็กร่าเริง, กระซิบลึกลับ, พูดช้าอบอุ่นแบบนักเล่านิทาน">
 
     <button class="primary" id="speechBtn" onclick="generateSpeech()">🎙 สร้างเสียงพูด</button>
     <div class="bars" id="speechBars"><span></span><span></span><span></span><span></span><span></span><span></span></div>
@@ -355,8 +363,10 @@ async function interpretError(provider, res){
 }
 
 // ---------- voices ----------
-const OPENAI_VOICES = ['alloy','echo','fable','onyx','nova','shimmer'];
+const OPENAI_VOICES = ['alloy','ash','ballad','coral','echo','fable','onyx','nova','sage','shimmer','verse','marin','cedar'];
 const GEMINI_VOICES = ['Zephyr','Puck','Charon','Kore','Fenrir','Leda','Orus','Aoede','Callirrhoe','Autonoe','Enceladus','Iapetus','Umbriel','Algieba','Despina','Erinome'];
+let elevenPreviewUrls = {}; // voice_id -> preview_url (no API cost to play these)
+
 async function refreshVoices(){
   const provider = $('speechProvider').value;
   $('speechProviderTag').textContent = provider.toUpperCase();
@@ -374,14 +384,16 @@ async function refreshVoices(){
     });
     return;
   }
-  // elevenlabs: fetch voice list
+  // elevenlabs: fetch voice list (includes a free preview_url per voice)
   const key = getKey('elevenlabs');
   if(!key){ sel.innerHTML='<option value="">-- ใส่ API key ก่อน --</option>'; return; }
   try{
     const res = await fetch('https://api.elevenlabs.io/v1/voices', { headers:{'xi-api-key':key} });
     const data = await res.json();
+    elevenPreviewUrls = {};
     (data.voices||[]).forEach(v=>{
       const o=document.createElement('option'); o.value=v.voice_id; o.textContent=v.name; sel.appendChild(o);
+      if(v.preview_url) elevenPreviewUrls[v.voice_id] = v.preview_url;
     });
     if(!data.voices || !data.voices.length) sel.innerHTML='<option value="">ไม่พบเสียง — ตรวจสอบ key</option>';
   }catch(e){
@@ -390,11 +402,95 @@ async function refreshVoices(){
 }
 function onSpeechProviderChange(){ refreshVoices(); }
 
+// ---------- voice preview ----------
+async function previewVoice(){
+  const provider = $('speechProvider').value;
+  const voice = $('speechVoice').value;
+  const statusEl = $('previewStatus');
+  const audioEl = $('previewAudio');
+  if(!voice){ statusEl.textContent='เลือกเสียงก่อนครับ'; statusEl.className='status err'; return; }
+
+  if(provider === 'elevenlabs'){
+    const url = elevenPreviewUrls[voice];
+    if(!url){ statusEl.textContent='ไม่มีตัวอย่างสำหรับเสียงนี้'; statusEl.className='status err'; return; }
+    audioEl.src = url; audioEl.style.display='none'; audioEl.play();
+    statusEl.textContent='🔊 กำลังเล่นตัวอย่าง (ฟรี ไม่เสีย credit)'; statusEl.className='status ok';
+    return;
+  }
+
+  // OpenAI / Gemini have no static preview — generate a short sample (uses a small amount of quota)
+  const key = getKey(provider);
+  if(!key){ statusEl.textContent='ยังไม่ได้ตั้งค่า API key สำหรับ '+provider; statusEl.className='status err'; return; }
+  $('previewBtn').disabled = true;
+  statusEl.textContent='กำลังสร้างตัวอย่างเสียง (ใช้ quota เล็กน้อย)...'; statusEl.className='status busy';
+  try{
+    const sample = 'สวัสดีค่ะ นี่คือตัวอย่างเสียงนี้';
+    const style = $('styleInstruction').value.trim();
+    const { audioBuf, mime } = await callTtsApi(provider, sample, voice, style, key);
+    const blob = new Blob([audioBuf], {type: mime});
+    audioEl.src = URL.createObjectURL(blob); audioEl.style.display='none'; audioEl.play();
+    statusEl.textContent='🔊 กำลังเล่นตัวอย่าง'; statusEl.className='status ok';
+  }catch(e){
+    statusEl.textContent = e.message || 'สร้างตัวอย่างไม่สำเร็จ'; statusEl.className='status err';
+  }
+  $('previewBtn').disabled = false;
+}
+
 // ---------- speech generation ----------
+// Shared TTS call used by both the main "generate" button and the voice preview button.
+// Returns { audioBuf: ArrayBuffer, mime: string }
+async function callTtsApi(provider, text, voice, style, key){
+  if(provider === 'openai'){
+    const body = { model:'gpt-4o-mini-tts', voice: voice||'alloy', input: text };
+    if(style) body.instructions = style; // gpt-4o-mini-tts supports free-text tone/emotion instructions
+    const res = await fetch('https://api.openai.com/v1/audio/speech', {
+      method:'POST',
+      headers:{ 'Authorization':'Bearer '+key, 'Content-Type':'application/json' },
+      body: JSON.stringify(body)
+    });
+    if(!res.ok){ const msg = await interpretError('openai', res); throw new Error(msg); }
+    return { audioBuf: await res.arrayBuffer(), mime: 'audio/mpeg' };
+  }
+  if(provider === 'gemini'){
+    const model = 'gemini-2.5-flash-preview-tts';
+    // Gemini has no separate "style" param — style direction is written as part of the prompt text.
+    const promptText = style ? `${style}: ${text}` : text;
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+      method:'POST',
+      headers:{ 'x-goog-api-key': key, 'Content-Type':'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: promptText }] }],
+        generationConfig: {
+          responseModalities: ['AUDIO'],
+          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice || 'Kore' } } }
+        }
+      })
+    });
+    if(!res.ok){ const msg = await interpretError('gemini', res); throw new Error(msg); }
+    const data = await res.json();
+    const part = data?.candidates?.[0]?.content?.parts?.[0];
+    const b64 = part?.inlineData?.data;
+    const mimeType = part?.inlineData?.mimeType || 'audio/L16;rate=24000';
+    if(!b64) throw new Error('Gemini ไม่ส่งเสียงกลับมา — ลองข้อความอื่นหรือเช็ค quota');
+    const rateMatch = /rate=(\d+)/.exec(mimeType);
+    const sampleRate = rateMatch ? parseInt(rateMatch[1]) : 24000;
+    return { audioBuf: pcmBase64ToWav(b64, sampleRate), mime: 'audio/wav' };
+  }
+  // elevenlabs — style/emotion is controlled by voice choice, not free-text instructions
+  const res = await fetch('https://api.elevenlabs.io/v1/text-to-speech/'+voice, {
+    method:'POST',
+    headers:{ 'xi-api-key':key, 'Content-Type':'application/json' },
+    body: JSON.stringify({ text, model_id:'eleven_multilingual_v2' })
+  });
+  if(!res.ok){ const msg = await interpretError('elevenlabs', res); throw new Error(msg); }
+  return { audioBuf: await res.arrayBuffer(), mime: 'audio/mpeg' };
+}
+
 async function generateSpeech(){
   const provider = $('speechProvider').value;
   const text = $('speechText').value.trim();
   const voice = $('speechVoice').value;
+  const style = $('styleInstruction').value.trim();
   const statusEl = $('speechStatus');
   if(!text){ statusEl.textContent='กรอกข้อความก่อนครับ'; statusEl.className='status err'; return; }
   const key = getKey(provider);
@@ -404,47 +500,8 @@ async function generateSpeech(){
   statusEl.textContent='กำลังสร้างเสียง...'; statusEl.className='status busy';
 
   try{
-    let audioBuf;
-    if(provider === 'openai'){
-      const res = await fetch('https://api.openai.com/v1/audio/speech', {
-        method:'POST',
-        headers:{ 'Authorization':'Bearer '+key, 'Content-Type':'application/json' },
-        body: JSON.stringify({ model:'tts-1', voice: voice||'alloy', input: text })
-      });
-      if(!res.ok){ const msg = await interpretError('openai', res); throw new Error(msg); }
-      audioBuf = await res.arrayBuffer();
-    } else if(provider === 'gemini'){
-      const model = 'gemini-2.5-flash-preview-tts';
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-        method:'POST',
-        headers:{ 'x-goog-api-key': key, 'Content-Type':'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text }] }],
-          generationConfig: {
-            responseModalities: ['AUDIO'],
-            speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice || 'Kore' } } }
-          }
-        })
-      });
-      if(!res.ok){ const msg = await interpretError('gemini', res); throw new Error(msg); }
-      const data = await res.json();
-      const part = data?.candidates?.[0]?.content?.parts?.[0];
-      const b64 = part?.inlineData?.data;
-      const mimeType = part?.inlineData?.mimeType || 'audio/L16;rate=24000';
-      if(!b64) throw new Error('Gemini ไม่ส่งเสียงกลับมา — ลองข้อความอื่นหรือเช็ค quota');
-      const rateMatch = /rate=(\d+)/.exec(mimeType);
-      const sampleRate = rateMatch ? parseInt(rateMatch[1]) : 24000;
-      audioBuf = pcmBase64ToWav(b64, sampleRate);
-    } else {
-      const res = await fetch('https://api.elevenlabs.io/v1/text-to-speech/'+voice, {
-        method:'POST',
-        headers:{ 'xi-api-key':key, 'Content-Type':'application/json' },
-        body: JSON.stringify({ text, model_id:'eleven_multilingual_v2' })
-      });
-      if(!res.ok){ const msg = await interpretError('elevenlabs', res); throw new Error(msg); }
-      audioBuf = await res.arrayBuffer();
-    }
-    speechBlob = new Blob([audioBuf], {type: provider === 'gemini' ? 'audio/wav' : 'audio/mpeg'});
+    const { audioBuf, mime } = await callTtsApi(provider, text, voice, style, key);
+    speechBlob = new Blob([audioBuf], {type: mime});
     const url = URL.createObjectURL(speechBlob);
     $('speechAudio').src = url; $('speechAudio').style.display='block';
     speechDuration = await getAudioDuration(speechBlob);
